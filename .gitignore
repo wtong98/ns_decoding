@@ -1,0 +1,6 @@
+# misc. stray files
+.ipynb_checkpoints/
+__pycache__/
+
+save/
+save/**/*
