@@ -4,10 +4,12 @@ NN models.
 author: William Tong
 date: March 12, 2020
 """
+import datetime
 
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+
 
 class CAE:
     def __init__(self, params):
@@ -22,6 +24,7 @@ class CAE:
         self.train_ds = None
         self.test_ds = None
         self.checkpoint_path = 'save/cae_model/model.ckpt'
+        self.log_path = 'save/cae_model/log/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
     def load_data(self, train_path, test_path):
@@ -47,11 +50,12 @@ class CAE:
 
         cp_callback = keras.callbacks.ModelCheckpoint(filepath=self.checkpoint_path,
                                                       save_weights_only=True)
+        tb_callback = tf.keras.callbacks.TensorBoard(log_dir=self.log_path, histogram_freq=1)
 
         self._build_cae_nn()
         self.model.fit(self.train_ds,
                        epochs=self.params['epoch'],
-                       callbacks=[cp_callback])
+                       callbacks=[cp_callback, tb_callback])
 
     def eval(self):
         return self.model.evaluate(self.test_ds)
