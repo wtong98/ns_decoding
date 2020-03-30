@@ -28,7 +28,8 @@ from internal.model import CAE
 params = {
     'batch_size': 32,
     'dropout_rate': 0.5,
-    'epoch': 1
+    'epoch': 1,
+    'train_val_split': 0.1
 }
 
 model = CAE(params)

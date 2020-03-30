@@ -10,7 +10,9 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
+from internal.util import sample_idxs
 
+# TODO: implemnet early stopping
 class CAE:
     def __init__(self, params):
         """
@@ -18,6 +20,7 @@ class CAE:
             batch_size: size of minibatch,
             dropout_rate: rate for dropout layers
             epoch: epochs to train
+            train_val_split: fraction of data to be validation data
         }
         """
         self.params = params
@@ -29,9 +32,13 @@ class CAE:
 
     def load_data(self, train_path, test_path):
         train_data = np.load(train_path)
-        train_example, train_label = train_data
-        self.train_ds = tf.data.Dataset.from_tensor_slices((train_example, train_label)) \
+        example, label = train_data
+        train_idx, val_idx = sample_idxs(example.shape[0], self.params['train_val_split'])
+
+        self.train_ds = tf.data.Dataset.from_tensor_slices((example[train_idx], label[train_idx])) \
                                        .shuffle(256) \
+                                       .batch(self.params['batch_size'])
+        self.val_data = tf.data.Dataset.from_tensor_slices((example[val_idx], label[val_idx])) \
                                        .batch(self.params['batch_size'])
 
         test_data = np.load(test_path)
@@ -51,11 +58,16 @@ class CAE:
         cp_callback = keras.callbacks.ModelCheckpoint(filepath=self.checkpoint_path,
                                                       save_weights_only=True)
         tb_callback = tf.keras.callbacks.TensorBoard(log_dir=self.log_path, histogram_freq=1)
+        es_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',
+                                                       patience=3,
+                                                       restore_best_weights=True)
+
 
         self._build_cae_nn()
         self.model.fit(self.train_ds,
                        epochs=self.params['epoch'],
-                       callbacks=[cp_callback, tb_callback])
+                       callbacks=[cp_callback, tb_callback, es_callback],
+                       validation_data=self.val_data)
 
     def eval(self):
         return self.model.evaluate(self.test_ds)
@@ -117,7 +129,6 @@ class CAE:
         ])
 
         model.compile(optimizer='adam',
-                      loss='mse',
-                      metrics=['mse'])
+                      loss='mse')
 
         self.model = model
