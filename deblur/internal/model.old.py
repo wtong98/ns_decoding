@@ -5,6 +5,8 @@ author: William Tong
 date: March 12, 2020
 """
 import datetime
+import os
+import os.path
 
 import numpy as np
 import tensorflow as tf
@@ -12,7 +14,7 @@ from tensorflow import keras
 
 from internal.util import sample_idxs
 
-# TODO: implemnet early stopping
+# TODO: check image normalization
 class CAE:
     def __init__(self, params):
         """
@@ -27,24 +29,60 @@ class CAE:
         self.train_ds = None
         self.test_ds = None
         self.checkpoint_path = 'save/cae_model/model.ckpt'
-        self.log_path = 'save/cae_model/log/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.log_path = 'save/cae_model/log/' + datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
 
 
-    def load_data(self, blur_path, truth_path, test_path):
-        example = np.load(blur_path)
-        label = np.load(truth_path)
-        train_idx, val_idx = sample_idxs(example.shape[0], self.params['train_val_split'])
-
-        self.train_ds = tf.data.Dataset.from_tensor_slices((example[train_idx], label[train_idx])) \
-                                       .shuffle(256) \
-                                       .batch(self.params['batch_size'])
-        self.val_ds = tf.data.Dataset.from_tensor_slices((example[val_idx], label[val_idx])) \
-                                       .batch(self.params['batch_size'])
-
-        test_data = np.load(test_path)
+    def load_test(self, test_path):
+        test_data = np.load(test_path) / 255
         test_example, test_label = test_data
         self.test_ds = tf.data.Dataset.from_tensor_slices((test_example, test_label)) \
                                       .batch(self.params['batch_size'])
+
+    def load_images(self, truth_dir, blur_dir):
+        # im_names = os.listdir(truth_dir)
+        # name_ds = tf.data.Dataset.from_tensor_slices(im_names)
+        # num_shards = int(1 / self.params['train_val_split'])
+        #
+        # name_val_ds = name_ds.shard(num_shards, 0)
+        # name_train_ds = name_ds.shard(num_shards, 1)
+        # for i in range(2, num_shards):
+        #     name_train_ds = name_train_ds.concatenate(name_ds.shard(num_shards, i))
+
+        im_names = os.listdir(truth_dir)
+        def read_path(image_path):
+            img = np.load(image_path) / 255
+            return np.expand_dims(img, -1)
+
+        def assemble(image_name):
+            truth_im = read_path(os.path.join(truth_dir, image_name))
+            blur_im = read_path(os.path.join(blur_dir, image_name))
+            return (blur_im, truth_im)
+
+        def image_gen():
+            for name in im_names:
+                yield assemble(name)
+
+        total_ds = tf.data.Dataset.from_generator(image_gen, (tf.float64, tf.float64),
+                                output_shapes=(tf.TensorShape((None, None, None)), tf.TensorShape((None, None, None))))
+        num_shards = int(1 / self.params['train_val_split'])
+
+        # TODO: avoid sharding for validation
+        self.val_ds = total_ds.shard(num_shards, 0)
+        self.train_ds = total_ds.shard(num_shards, 1)
+        for i in range(2, num_shards):
+            self.train_ds = self.train_ds.concatenate(total_ds.shard(num_shards, i))
+
+        self.val_ds = self.val_ds.batch(self.params['batch_size'])
+        self.train_ds = self.train_ds.shuffle(256) \
+                                     .batch(self.params['batch_size'])
+
+        # AUTOTUNE = tf.data.experimental.AUTOTUNE
+        # self.val_ds = name_val_ds.map(assemble, num_parallel_calls=AUTOTUNE) \
+        #                          .batch(self.params['batch_size'])
+        #
+        # self.train_ds = name_train_ds.map(assemble, num_parallel_calls=AUTOTUNE) \
+        #                              .shuffle(256) \
+        #                              .batch(self.params['batch_size'])
 
     def load_weights(self):
         self._build_cae_nn()

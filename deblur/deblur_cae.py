@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from internal.model import CAE
 
-# <codecell>
+# <codecell>(
 params = {
     'batch_size': 32,
     'dropout_rate': 0.5,
@@ -33,7 +33,9 @@ params = {
 }
 
 model = CAE(params)
-model.load_data(train_path='save/cae_train_dataset.npy',
+
+model.load_data(blur_path='save/cae_blur_dataset.npy',
+                truth_path='save/cae_truth_dataset.npy',
                 test_path='save/cae_test_dataset.npy')
 
 # <codecell>
@@ -54,7 +56,7 @@ test_blur, test_target = np.squeeze(np.load('save/cae_test_dataset_gpu.npy'))
 # <codecell>
 def make_pdf_plot(num_images, save_dir):
     with PdfPages(os.path.join(save_dir, "deblur_cae.pdf")) as pdf:
-        idxs = random.sample(range(200), num_images)
+        idxs = random.sample(range(test_blur.shape[0]), num_images)
         idxs.sort()
         for i in tqdm(idxs):
             truth = test_target[i,:,:]
@@ -83,7 +85,9 @@ def _plot_row(image_no, truth, blur, cae):
 
 
 # <codecell>
-# make_pdf_plot(20, 'save/')
+make_pdf_plot(20, 'save/')
+
+# <codecell>
 
 mse_before_cae = np.mean(np.square(test_blur - test_target), axis=(1,2))
 mse_after_cae = np.mean(np.square(preds - test_target), axis=(1,2))

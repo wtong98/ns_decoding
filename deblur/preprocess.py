@@ -29,19 +29,16 @@ GF_ARGS = {
 }
 
 # <codecell>
-smoothed_images = np.load('save/smooth_test_images.npy')
-decoded_images = np.load('save/smooth_test_decoded.npy')
-residuals = (smoothed_images - decoded_images) / 255
-
-# <codecell>
 def process_image(image_dir):
+    smoothed_images = np.load('save/smooth_test_images.npy')
+    decoded_images = np.load('save/smooth_test_decoded.npy')
+    residuals = _normalize(smoothed_images - decoded_images)
     variance = np.mean(np.var(residuals, axis=0))
-    print('variance:', variance)
 
     image_paths = _ls_images(image_dir)
     image_arr = _read_image(image_paths)
-    trim_im = _save_image(_trim_image(image_arr), r'save/images/truth')
-    samp_im = _save_image(_sample(trim_im, variance), r'save/images/blur')
+    trim_im = _stack(_trim_image(image_arr), save_path='save/cae_truth_dataset.npy')
+    samp_im = _stack(_sample(trim_im, variance), save_path='save/cae_blur_dataset.npy')
 
     total = sum([1 for _ in samp_im])
     print('Processed %d images' % total)
@@ -55,7 +52,8 @@ def _read_image(image_paths):
     for path in image_paths:
         yield io.imread(path, as_gray=True)
 
-def _trim_image(images):
+def _trim_image(images, save_path=None):
+    vals = []
     for im in images:
         trim_im = _center_crop(_adjust_size(im))
         yield trim_im
@@ -81,24 +79,20 @@ def _sample(images, variance):
         samp_res = sample_residual(variance, **GF_ARGS)
         yield blur_im - samp_res
 
-def _save_image(images, save_dir):
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir, mode=0o755)
-
-    count = 0
-    for im in tqdm(images):
-        path = os.path.join(save_dir, "im_%d.jpg" % count)
-        io.imsave(path, _to_byte(im))
-        count += 1
-
+def _stack(image_gen, save_path):
+    vals = []
+    for im in tqdm(image_gen):
+        vals.append(im)
         yield im
 
-def _to_byte(image):
-    min_val = np.min(image)
-    range_val = np.max(image) - min_val
-    byte_image = (255 / range_val * (image - min_val)).astype('uint8')
+    data = _normalize(np.stack(vals, axis=0))
+    np.save(save_path, np.expand_dims(data, -1))
 
-    return byte_image
+
+def _normalize(arr):
+    min = np.min(arr)
+    range = np.max(arr) - min
+    return (arr - min) / range
 
 
 def sample_residual(variance: float, **filter_args) -> np.ndarray:
@@ -163,3 +157,12 @@ def _plot_row(image_no, truth, blur, decoded_gpr, residual, sample_res):
 
 # <codecell>
 process_image(r'/home/grandpaa/workspace/neural_decoding/dataset/imagenet_images')
+
+# <codecell>
+IMAGE_DIMS = (95, 146)
+images = _normalize(np.load('save/test_images.npy'))
+decoded_images = _normalize(np.load('save/smooth_test_decoded.npy'))
+test_data = np.stack((decoded_images.reshape(-1, *IMAGE_DIMS),
+                      images.reshape(-1, *IMAGE_DIMS)), axis=0)
+
+np.save('save/cae_test_dataset.npy', np.expand_dims(test_data, -1))
