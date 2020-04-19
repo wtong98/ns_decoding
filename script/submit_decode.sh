@@ -1,4 +1,3 @@
-
 #!/bin/sh
 #
 # Submit job to decode images
