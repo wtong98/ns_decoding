@@ -5,9 +5,10 @@
 #
 #SBATCH -A stats           # Set Account name
 #SBATCH --job-name=cae_training  # The job name
-#SBATCH -c 1                   # Number of cores
-#SBATCH -t 0-6:00              # Runtime in D-HH:MM
-#SBATCH --gres=gpu:1           # Request a gpu module
+#SBATCH --exclusive
+#SBATCH --nodes=1
+#SBATCH --mem=32gb
+#SBATCH -t 3-00:00              # Runtime in D-HH:MM
  
 module load singularity
 singularity exec --nv /moto/opt/singularity/tensorflow-1.13-gpu-py3-moto.simg python deblur_cae.py
