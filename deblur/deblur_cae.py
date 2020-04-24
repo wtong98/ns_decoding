@@ -33,10 +33,7 @@ params = {
 }
 
 model = CAE(params)
-
-model.load_data(blur_path='save/cae_blur_dataset.npy',
-                truth_path='save/cae_truth_dataset.npy',
-                test_path='save/cae_test_dataset.npy')
+model.load_data(path=r'save/cae_dataset.h5py')
 
 # <codecell>
 model.train()

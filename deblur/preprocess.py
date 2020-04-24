@@ -10,6 +10,7 @@ import os
 import os.path
 import random
 
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -37,8 +38,8 @@ def process_image(image_dir):
 
     image_paths = _ls_images(image_dir)
     image_arr = _read_image(image_paths)
-    trim_im = _stack(_trim_image(image_arr), save_path='save/cae_truth_dataset.npy')
-    samp_im = _stack(_sample(trim_im, variance), save_path='save/cae_blur_dataset.npy')
+    trim_im = _stack(_trim_image(image_arr), save_name="train_truth")
+    samp_im = _stack(_sample(trim_im, variance), save_name="train_blur")
 
     total = sum([1 for _ in samp_im])
     print('Processed %d images' % total)
@@ -79,14 +80,56 @@ def _sample(images, variance):
         samp_res = sample_residual(variance, **GF_ARGS)
         yield blur_im - samp_res
 
-def _stack(image_gen, save_path):
+def _stack(image_gen, save_name, chunk_size=100):
     vals = []
+    chunk_idx = 0
     for im in tqdm(image_gen):
         vals.append(im)
+
+        if len(vals) >= chunk_size:
+            data = _normalize(np.stack(vals, axis=0))
+            _save_to_ds(save_name,
+                        np.expand_dims(data, -1),
+                        chunk_size=chunk_size,
+                        chunk_idx=chunk_idx)
+            chunk_idx += 1
+            vals.clear()
+
         yield im
 
-    data = _normalize(np.stack(vals, axis=0))
-    np.save(save_path, np.expand_dims(data, -1))
+    if len(vals) >= 0:
+        data = _normalize(np.stack(vals, axis=0))
+        _save_to_ds(save_name,
+                    np.expand_dims(data, -1),
+                    chunk_size=chunk_size,
+                    chunk_idx=chunk_idx,
+                    final_chunk=True)
+
+
+
+def _save_to_ds(save_name, arr, save_path='save/cae_dataset.h5py',
+                chunk_size=None, chunk_idx=0, final_chunk=False):
+    with h5py.File(save_path, 'a') as fp:
+        if chunk_size is None:
+            ds = fp.create_dataset(save_name, arr.shape)
+            ds[:] = arr
+        else:
+            data_shape = list(arr.shape[1:])
+            ds = fp[save_name] if save_name in fp \
+                else fp.create_dataset(save_name,
+                                       shape=(chunk_size * 10, *data_shape),
+                                       chunks=(chunk_size, *data_shape),
+                                       maxshape=(None, *data_shape))
+            start = chunk_idx * chunk_size
+            end = start + min((chunk_idx + 1) * chunk_size, arr.shape[0])
+
+            if end >= ds.shape[0]:
+                ds.resize(int(ds.shape[0] * 1.5), axis=0)
+
+            ds[start:end] = arr
+
+            if final_chunk:
+                ds.resize(end, axis=0)
 
 
 def _normalize(arr):
@@ -109,52 +152,6 @@ def _make_smooth_gaussian_noise(dimension: tuple, **filter_args) -> np.ndarray:
     return smoothed_noise
 
 
-def make_pdf_plot(num_images, train_idxs, pred_res, save_dir):
-    with PdfPages(os.path.join(save_dir, "sample_residual_comparison.pdf")) as pdf:
-        idxs = random.sample(list(train_idxs), num_images)
-        idxs.sort()
-        for i in tqdm(idxs):
-            truth = images[i,:].reshape(IMAGE_DIMS)
-            blur = smoothed_images[i,:].reshape(IMAGE_DIMS)
-            decoded = decoded_images[i,:].reshape(IMAGE_DIMS)
-            residual = residuals[i,:].reshape(IMAGE_DIMS)
-            samp_residual = sample_residual(residual)
-            curr_pred_res = pred_res[i,:,:]
-
-            fig = _plot_row(i, truth, blur, decoded + curr_pred_res, residual - curr_pred_res, samp_residual)
-            pdf.savefig(fig)
-
-
-def _plot_row(image_no, truth, blur, decoded_gpr, residual, sample_res):
-    fig, axs = plt.subplots(ncols=6, figsize=(15,5))
-
-    im1 = axs[0].imshow(truth, cmap='Greys_r')
-    axs[0].set_title("Ground truth: "+"Image "+str(image_no))
-    axs[0].axis('off')
-
-    axs[1].imshow(blur, cmap='Greys_r')
-    axs[1].set_title("Smoothed: "+"Image "+str(image_no))
-    axs[1].axis('off')
-
-    im1 = axs[2].imshow(decoded_gpr, cmap='Greys_r')
-    axs[2].set_title("Decoded + GP: "+"Image "+str(image_no))
-    axs[2].axis('off')
-
-    axs[3].imshow(residual, cmap='Reds_r')
-    axs[3].set_title("Residuals: "+"Image "+str(image_no))
-    axs[3].axis('off')
-
-    im5 = axs[4].imshow(sample_res, cmap='Reds_r')
-    axs[4].set_title("Sampled residuals: "+"Image "+str(image_no))
-    axs[4].axis('off')
-
-    axs[5].axis('off')
-
-    fig.tight_layout()
-    fig.colorbar(im1, shrink=0.4, pad=0.5)
-    fig.colorbar(im5, shrink=0.4, pad=0.5)
-
-
 # <codecell>
 process_image(r'/home/grandpaa/workspace/neural_decoding/dataset/imagenet_images')
 
@@ -165,4 +162,6 @@ decoded_images = _normalize(np.load('save/smooth_test_decoded.npy'))
 test_data = np.stack((decoded_images.reshape(-1, *IMAGE_DIMS),
                       images.reshape(-1, *IMAGE_DIMS)), axis=0)
 
-np.save('save/cae_test_dataset.npy', np.expand_dims(test_data, -1))
+# TODo: incorporate into model and deblur_cae
+_save_to_ds("test_blur", decoded_images.reshape(-1, *IMAGE_DIMS, 1))
+_save_to_ds("test_truth", images.reshape(-1, *IMAGE_DIMS, 1))

@@ -6,6 +6,7 @@ date: March 12, 2020
 """
 import datetime
 
+import h5py
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
@@ -30,19 +31,21 @@ class CAE:
         self.log_path = 'save/cae_model/log/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-    def load_data(self, blur_path, truth_path, test_path):
-        example = np.load(blur_path)
-        label = np.load(truth_path)
-        train_idx, val_idx = sample_idxs(example.shape[0], self.params['train_val_split'])
+    def load_data(self, path):
+        example = label = test_example = test_label = None
+        with h5py.File(path, 'r') as fp:
+            example = fp['train_blur'][:]
+            label = fp['train_truth'][:]
+            test_example = fp['test_blur'][:]
+            test_label = fp['test_truth'][:]
 
+        train_idx, val_idx = sample_idxs(example.shape[0], self.params['train_val_split'])
         self.train_ds = tf.data.Dataset.from_tensor_slices((example[train_idx], label[train_idx])) \
                                        .shuffle(256) \
                                        .batch(self.params['batch_size'])
         self.val_ds = tf.data.Dataset.from_tensor_slices((example[val_idx], label[val_idx])) \
                                        .batch(self.params['batch_size'])
 
-        test_data = np.load(test_path)
-        test_example, test_label = test_data
         self.test_ds = tf.data.Dataset.from_tensor_slices((test_example, test_label)) \
                                       .batch(self.params['batch_size'])
 
