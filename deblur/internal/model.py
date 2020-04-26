@@ -30,6 +30,8 @@ class CAE:
         self.checkpoint_path = 'save/cae_model/model.ckpt'
         self.log_path = 'save/cae_model/log/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
+        self._build_cae_nn()
+
 
     def load_data(self, path):
         example = label = test_example = test_label = None
@@ -50,7 +52,6 @@ class CAE:
                                       .batch(self.params['batch_size'])
 
     def load_weights(self):
-        self._build_cae_nn()
         self.model.load_weights(self.checkpoint_path)
 
     def train(self):
@@ -66,7 +67,6 @@ class CAE:
                                                        restore_best_weights=True)
 
 
-        self._build_cae_nn()
         self.model.fit(self.train_ds,
                        epochs=self.params['epoch'],
                        callbacks=[cp_callback, tb_callback, es_callback],

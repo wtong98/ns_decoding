@@ -17,19 +17,26 @@ date: March 12, 2020
 import os.path
 import random
 
+import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from tqdm import tqdm
 
-from internal.model import CAE
+from internal.model_keras_tfv1 import CAE
 
 # <codecell>(
 params = {
     'batch_size': 32,
     'dropout_rate': 0.5,
     'epoch': 1,
-    'train_val_split': 0.1
+    'train_val_split': 0.1,
+    'total_images': 391,
+    'check_train_every': 100,
+    'check_val_every': 200,
+    'early_stopping': True,
+    'stale_after': 5,
+    'early_stop_ratio': 0.99
 }
 
 model = CAE(params)
@@ -47,8 +54,11 @@ np.save('save/cae_preds.npy', preds)
 ###############
 # PLOT_MAKING #
 ###############
-preds = np.squeeze(np.load('save/cae_preds_gpu.npy'))
-test_blur, test_target = np.squeeze(np.load('save/cae_test_dataset_gpu.npy'))
+preds = np.squeeze(np.load('save/cae_preds.npy'))
+fp = h5py.File('save/cae_dataset.h5py', 'r')
+test_blur = np.squeeze(fp['test_blur'][:])
+test_target = np.squeeze(fp['test_truth'][:])
+fp.close()
 
 # <codecell>
 def make_pdf_plot(num_images, save_dir):
@@ -100,7 +110,6 @@ plt.savefig('save/mse_before_and_after_cae.png', dpi=150)
 
 # <codecell>
 mse_before_cae.shape
-
 
 
 

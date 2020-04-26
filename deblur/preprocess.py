@@ -38,10 +38,13 @@ def process_image(image_dir):
 
     image_paths = _ls_images(image_dir)
     image_arr = _read_image(image_paths)
-    trim_im = _stack(_trim_image(image_arr), save_name="train_truth")
-    samp_im = _stack(_sample(trim_im, variance), save_name="train_blur")
+    data_pair = _trim_and_sample(image_arr, variance)
+    samps = _stack(data_pair, train_val_split=0.05)
 
-    total = sum([1 for _ in samp_im])
+    # trim_im = _stack(_trim_image(image_arr), save_name="train_truth")
+    # samp_im = _stack(_sample(trim_im, variance), save_name="train_blur")
+
+    total = sum([1 for _ in samps])
     print('Processed %d images' % total)
 
 def _ls_images(image_dir):
@@ -53,11 +56,14 @@ def _read_image(image_paths):
     for path in image_paths:
         yield io.imread(path, as_gray=True)
 
-def _trim_image(images, save_path=None):
-    vals = []
+def _trim_and_sample(images, variance):
     for im in images:
         trim_im = _center_crop(_adjust_size(im))
-        yield trim_im
+        blur_im = gaussian_filter(trim_im, **GF_ARGS)
+        samp_res = sample_residual(variance, **GF_ARGS)
+
+        blur_im = blur_im - samp_res
+        yield (blur_im, trim_im)
 
 def _adjust_size(image):
     x_adj = IMAGE_DIMS[0] / image.shape[0]
@@ -74,36 +80,57 @@ def _center_crop(image):
 
     return util.crop(image, ((x_start, x_end), (y_start, y_end)), copy=True)
 
-def _sample(images, variance):
-    for im in images:
-        blur_im = gaussian_filter(im, **GF_ARGS)
-        samp_res = sample_residual(variance, **GF_ARGS)
-        yield blur_im - samp_res
+def _stack(image_gen, train_val_split, chunk_size=100):
+    train_ims = []
+    val_ims = []
 
-def _stack(image_gen, save_name, chunk_size=100):
-    vals = []
-    chunk_idx = 0
+    train_chunk_idx = 0
+    val_chunk_idx = 0
     for im in tqdm(image_gen):
-        vals.append(im)
+        if random.random() < train_val_split:
+            val_ims.append(im)
+        else:
+            train_ims.append(im)
 
-        if len(vals) >= chunk_size:
-            data = _normalize(np.stack(vals, axis=0))
-            _save_to_ds(save_name,
-                        np.expand_dims(data, -1),
-                        chunk_size=chunk_size,
-                        chunk_idx=chunk_idx)
-            chunk_idx += 1
-            vals.clear()
+        if len(train_ims) >= chunk_size:
+            train_chunk_idx, train_ims = _chunked_save(train_ims,
+                                                       ('train_blur', 'train_truth'),
+                                                       chunk_size, train_chunk_idx)
+
+        if len(val_ims) >= chunk_size:
+            val_chunk_idx, val_ims = _chunked_save(val_ims,
+                                                   ('val_blur', 'val_truth'),
+                                                   chunk_size, val_chunk_idx)
 
         yield im
 
-    if len(vals) >= 0:
-        data = _normalize(np.stack(vals, axis=0))
-        _save_to_ds(save_name,
-                    np.expand_dims(data, -1),
-                    chunk_size=chunk_size,
-                    chunk_idx=chunk_idx,
-                    final_chunk=True)
+    if len(train_ims) >= 0:
+        _chunked_save(train_ims, ('train_blur', 'train_truth'),
+                      chunk_size, train_chunk_idx, final_chunk=True)
+
+    if len(val_ims) >= 0:
+        _chunked_save(val_ims, ('val_blur', 'val_truth'),
+                      chunk_size, val_chunk_idx, final_chunk=True)
+
+
+def _chunked_save(im_pair, save_name_pair, chunk_size, chunk_idx, final_chunk=False):
+    blur, truth = _normalize(np.stack(im_pair, axis=1))
+    blur_name, truth_name = save_name_pair
+
+    _save_to_ds(blur_name,
+                np.expand_dims(blur, -1),
+                chunk_size=chunk_size,
+                chunk_idx=chunk_idx,
+                final_chunk=final_chunk)
+
+    _save_to_ds(truth_name,
+                np.expand_dims(truth, -1),
+                chunk_size=chunk_size,
+                chunk_idx=chunk_idx,
+                final_chunk=final_chunk)
+
+    return chunk_idx + 1, []
+
 
 
 
@@ -121,7 +148,7 @@ def _save_to_ds(save_name, arr, save_path='save/cae_dataset.h5py',
                                        chunks=(chunk_size, *data_shape),
                                        maxshape=(None, *data_shape))
             start = chunk_idx * chunk_size
-            end = start + min((chunk_idx + 1) * chunk_size, arr.shape[0])
+            end = start + min(chunk_size, arr.shape[0])
 
             if end >= ds.shape[0]:
                 ds.resize(int(ds.shape[0] * 1.5), axis=0)

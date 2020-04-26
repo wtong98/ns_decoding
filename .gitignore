@@ -4,3 +4,6 @@ __pycache__/
 
 save/
 save/**/*
+
+tfgpu_env/
+tfgpu_env/**/*

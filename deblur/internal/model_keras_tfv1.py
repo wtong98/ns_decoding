@@ -5,16 +5,16 @@ author: William Tong
 date: March 12, 2020
 """
 import datetime
-import os
-import os.path
+import math
 
+import h5py
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
 from internal.util import sample_idxs
 
-# TODO: check image normalization
+# TODO: implemnet early stopping
 class CAE:
     def __init__(self, params):
         """
@@ -26,66 +26,79 @@ class CAE:
         }
         """
         self.params = params
-        self.train_ds = None
-        self.test_ds = None
+        self.train_ds = self.train_steps = None
+        self.val_ds = self.val_steps = None
+        self.test_ds = self.test_steps = None
         self.checkpoint_path = 'save/cae_model/model.ckpt'
-        self.log_path = 'save/cae_model/log/' + datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+        self.log_path = 'save/cae_model/log/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.h5fp = None
 
+        self._build_cae_nn()
 
-    def load_test(self, test_path):
-        test_data = np.load(test_path) / 255
-        test_example, test_label = test_data
+    def load_data(self, path):
+        example = label = test_example = test_label = None
+        fp = self.h5fp = h5py.File(path, 'r')
+        batch_size = self.params['batch_size']
+
+        example = fp['train_blur']
+        label = fp['train_truth']
+        self.train_steps = math.ceil(len(example) / batch_size)
+
+        val_example = fp['val_blur']
+        val_label = fp['val_truth']
+        self.val_steps = math.ceil(len(val_example) / batch_size)
+
+        test_example = fp['test_blur']
+        test_label = fp['test_truth']
+        self.test_steps = math.ceil(len(test_example) / batch_size)
+
+        self.train_ds = tf.data.Dataset.from_tensor_slices((example, label)) \
+                                       .shuffle(256) \
+                                       .batch(batch_size)
+        self.val_ds = tf.data.Dataset.from_tensor_slices((val_example, val_label)) \
+                                       .batch(batch_size)
+
         self.test_ds = tf.data.Dataset.from_tensor_slices((test_example, test_label)) \
-                                      .batch(self.params['batch_size'])
+                                      .batch(batch_size)
 
-    def load_images(self, truth_dir, blur_dir):
-        # im_names = os.listdir(truth_dir)
-        # name_ds = tf.data.Dataset.from_tensor_slices(im_names)
-        # num_shards = int(1 / self.params['train_val_split'])
-        #
-        # name_val_ds = name_ds.shard(num_shards, 0)
-        # name_train_ds = name_ds.shard(num_shards, 1)
-        # for i in range(2, num_shards):
-        #     name_train_ds = name_train_ds.concatenate(name_ds.shard(num_shards, i))
-
-        im_names = os.listdir(truth_dir)
-        def read_path(image_path):
-            img = np.load(image_path) / 255
-            return np.expand_dims(img, -1)
-
-        def assemble(image_name):
-            truth_im = read_path(os.path.join(truth_dir, image_name))
-            blur_im = read_path(os.path.join(blur_dir, image_name))
-            return (blur_im, truth_im)
-
-        def image_gen():
-            for name in im_names:
-                yield assemble(name)
-
-        total_ds = tf.data.Dataset.from_generator(image_gen, (tf.float64, tf.float64),
-                                output_shapes=(tf.TensorShape((None, None, None)), tf.TensorShape((None, None, None))))
-        num_shards = int(1 / self.params['train_val_split'])
-
-        # TODO: avoid sharding for validation
-        self.val_ds = total_ds.shard(num_shards, 0)
-        self.train_ds = total_ds.shard(num_shards, 1)
-        for i in range(2, num_shards):
-            self.train_ds = self.train_ds.concatenate(total_ds.shard(num_shards, i))
-
-        self.val_ds = self.val_ds.batch(self.params['batch_size'])
-        self.train_ds = self.train_ds.shuffle(256) \
-                                     .batch(self.params['batch_size'])
-
-        # AUTOTUNE = tf.data.experimental.AUTOTUNE
-        # self.val_ds = name_val_ds.map(assemble, num_parallel_calls=AUTOTUNE) \
-        #                          .batch(self.params['batch_size'])
-        #
-        # self.train_ds = name_train_ds.map(assemble, num_parallel_calls=AUTOTUNE) \
-        #                              .shuffle(256) \
-        #                              .batch(self.params['batch_size'])
+    # def load_data(self, path):
+    #     self.h5fp = h5py.File(path, 'r')
+    #
+    #     def build_batched_gen(blur_name, truth_name, batch_size, chunk_factor = 10):
+    #         fp = self.h5fp
+    #         data_len = len(fp[blur_name])
+    #         chunk_size = batch_size * chunk_factor
+    #         total_chunks = math.ceil(data_len / chunk_size)
+    #
+    #         def generator():
+    #             while True:
+    #                 for chunk_idx in range(total_chunks):
+    #                     start = chunk_idx * chunk_size
+    #                     end = min(start + chunk_size, data_len)
+    #                     rand_idx, _ = sample_idxs(end - start, 0)
+    #
+    #                     blur_chunk = fp[blur_name][start:end][rand_idx]
+    #                     truth_chunk = fp[truth_name][start:end][rand_idx]
+    #
+    #                     chunk_len = len(blur_chunk)
+    #                     total_batches = math.ceil(chunk_len / batch_size)
+    #                     for batch_idx in range(total_batches):
+    #                         start = batch_idx * batch_size
+    #                         end = min(start + batch_size, chunk_len)
+    #
+    #                         blur_batch = blur_chunk[start:end]
+    #                         truth_batch = truth_chunk[start:end]
+    #                         yield blur_batch, truth_batch
+    #
+    #         num_batches = math.ceil(data_len / batch_size)
+    #         return generator(), num_batches
+    #
+    #
+    #     self.train_ds, self.train_steps = build_batched_gen('train_blur', 'train_truth', batch_size=32)
+    #     self.val_ds, self.val_steps = build_batched_gen('val_blur', 'val_truth', batch_size=32)
+    #     self.test_ds, self.test_steps = build_batched_gen('test_blur', 'test_truth', batch_size=32)
 
     def load_weights(self):
-        self._build_cae_nn()
         self.model.load_weights(self.checkpoint_path)
 
     def train(self):
@@ -101,20 +114,23 @@ class CAE:
                                                        restore_best_weights=True)
 
 
-        self._build_cae_nn()
         self.model.fit(self.train_ds,
                        epochs=self.params['epoch'],
                        callbacks=[cp_callback, tb_callback, es_callback],
-                       validation_data=self.val_ds)
+                       validation_data=self.val_ds,
+                       steps_per_epoch=self.train_steps,
+                       validation_steps=self.val_steps)
 
     def eval(self):
         return self.model.evaluate(self.test_ds)
 
-    def predict(self, example=None, **kwargs):
-        if example is None:
-            example = self.test_ds
+    def predict(self):
+        return self.model.predict(self.test_ds, steps=self.test_steps)
 
-        return self.model.predict(example, **kwargs)
+
+    def close():
+        if self.h5fp is not None:
+            self.h5fp.close()
 
 
     def _build_cae_nn(self):
