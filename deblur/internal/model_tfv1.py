@@ -71,9 +71,9 @@ class CAE:
                     truth_batch = truth_chunk[start:end]
                     yield blur_batch, truth_batch
 
-        self.train_ds = batched_gen('train_blur', 'train_truth', batch_size=32)
-        self.val_ds = batched_gen('val_blur', 'val_truth', batch_size=32)
-        self.test_ds = batched_gen('test_blur', 'test_truth', batch_size=32)
+        self.train_ds = lambda: batched_gen('train_blur', 'train_truth', batch_size=32)
+        self.val_ds = lambda: batched_gen('val_blur', 'val_truth', batch_size=32)
+        self.test_ds = lambda: batched_gen('test_blur', 'test_truth', batch_size=32)
 
 
     def load_weights(self):
@@ -95,7 +95,7 @@ class CAE:
             epoch_batch_nb = 0
             progbar = tf.keras.utils.Progbar(self.params['total_images'])
 
-            for X_low_res, Y_ori in self.train_ds:
+            for X_low_res, Y_ori in self.train_ds():
                 feed_dict = {self.input_x_ph: X_low_res,
                              self.input_y_ph: Y_ori,
                              self.phase_train_ph: True}
@@ -127,7 +127,7 @@ class CAE:
 
                         if should_stop:
                             print('Early stopping!')
-                            exit(1)
+                            return
 
                 # end of batch bookeeping
                 progbar.add(len(X_low_res), values=prog_vals if len(prog_vals) > 0 else None)
@@ -146,11 +146,11 @@ class CAE:
 
     def calculate_val_loss(self):
         val_losses = []
-        for x_val, y_val in self.val_ds:
+        for x_val, y_val in self.val_ds():
             feed_dict = {
                 self.input_x_ph: x_val,
                 self.input_y_ph: y_val,
-                self.phase_trai_ph: False
+                self.phase_train_ph: False
             }
             val_losses.append(self.loss.eval(session=self.sess, feed_dict=feed_dict))
 
@@ -178,7 +178,7 @@ class CAE:
             self.load_weights()
 
         preds = []
-        for x_test, y_test in self.test_ds:
+        for x_test, y_test in self.test_ds():
             feed_dict = {self.input_x_ph: x_test, self.phase_train_ph: False}
             y_hat_test = self.sess.run(self.model, feed_dict=feed_dict)
             preds.append(y_hat_test)

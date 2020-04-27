@@ -23,17 +23,17 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from tqdm import tqdm
 
-from internal.model_keras_tfv1 import CAE
+from internal.model_tfv1 import CAE
 
 # <codecell>(
 params = {
     'batch_size': 32,
     'dropout_rate': 0.5,
-    'epoch': 1,
+    'epoch': 2,
     'train_val_split': 0.1,
     'total_images': 391,
-    'check_train_every': 100,
-    'check_val_every': 200,
+    'check_train_every': 1,
+    'check_val_every': 2,
     'early_stopping': True,
     'stale_after': 5,
     'early_stop_ratio': 0.99
