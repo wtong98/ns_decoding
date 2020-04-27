@@ -47,7 +47,7 @@ class CAE:
     def load_data(self, path):
         self.h5fp = h5py.File(path, 'r')
 
-        def batched_gen(blur_name, truth_name, batch_size, chunk_factor = 10):
+        def batched_gen(blur_name, truth_name, batch_size, chunk_factor = 10, shuffle=False):
             fp = self.h5fp
             data_len = len(fp[blur_name])
             chunk_size = batch_size * chunk_factor
@@ -56,10 +56,14 @@ class CAE:
             for chunk_idx in range(total_chunks):
                 start = chunk_idx * chunk_size
                 end = min(start + chunk_size, data_len)
-                rand_idx, _ = sample_idxs(end - start, 0)
 
-                blur_chunk = fp[blur_name][start:end][rand_idx]
-                truth_chunk = fp[truth_name][start:end][rand_idx]
+                blur_chunk = fp[blur_name][start:end]
+                truth_chunk = fp[truth_name][start:end]
+
+                if shuffle:
+                    rand_idx, _ = sample_idxs(end - start, 0)
+                    blur_chunk = blur_chunk[rand_idx]
+                    truth_chunk = truth_chunk[rand_idx]
 
                 chunk_len = len(blur_chunk)
                 total_batches = math.ceil(chunk_len / batch_size)
@@ -71,7 +75,7 @@ class CAE:
                     truth_batch = truth_chunk[start:end]
                     yield blur_batch, truth_batch
 
-        self.train_ds = lambda: batched_gen('train_blur', 'train_truth', batch_size=32)
+        self.train_ds = lambda: batched_gen('train_blur', 'train_truth', batch_size=32, shuffle=True)
         self.val_ds = lambda: batched_gen('val_blur', 'val_truth', batch_size=32)
         self.test_ds = lambda: batched_gen('test_blur', 'test_truth', batch_size=32)
 

@@ -54,11 +54,12 @@ np.save('save/cae_preds.npy', preds)
 ###############
 # PLOT_MAKING #
 ###############
-preds = np.squeeze(np.load('save/cae_preds.npy'))
-fp = h5py.File('save/cae_dataset.h5py', 'r')
-test_blur = np.squeeze(fp['test_blur'][:])
-test_target = np.squeeze(fp['test_truth'][:])
-fp.close()
+preds = np.squeeze(np.load('save/cae_preds_gpu.npy'))
+test_blur, test_target = np.squeeze(np.load('save/cae_dataset_test_gpu.npy'))
+# fp = h5py.File('save/cae_dataset.h5py', 'r')
+# test_blur = np.squeeze(fp['test_blur'][:])
+# test_target = np.squeeze(fp['test_truth'][:])
+# fp.close()
 
 # <codecell>
 def make_pdf_plot(num_images, save_dir):
