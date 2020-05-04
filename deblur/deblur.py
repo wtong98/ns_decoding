@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from tqdm import tqdm
 
-from internal.model_tfv1 import CAE
+from internal.model_tfv1 import SRGAN
 
 # <codecell>(
 params = {
@@ -39,7 +39,7 @@ params = {
     'early_stop_ratio': 0.99
 }
 
-model = CAE(params)
+model = SRGAN(params)
 model.load_data(path=r'save/cae_dataset.h5py')
 
 # <codecell>
@@ -56,6 +56,8 @@ np.save('save/cae_preds.npy', preds)
 ###############
 preds = np.squeeze(np.load('save/cae_preds_gpu.npy'))
 test_blur, test_target = np.squeeze(np.load('save/cae_dataset_test_gpu.npy'))
+
+preds = (preds - np.min(preds)) / (np.max(preds) - np.min(preds))
 # fp = h5py.File('save/cae_dataset.h5py', 'r')
 # test_blur = np.squeeze(fp['test_blur'][:])
 # test_target = np.squeeze(fp['test_truth'][:])
@@ -100,7 +102,7 @@ make_pdf_plot(20, 'save/')
 mse_before_cae = np.mean(np.square(test_blur - test_target), axis=(1,2))
 mse_after_cae = np.mean(np.square(preds - test_target), axis=(1,2))
 
-one_to_one_line = np.arange(0, 5000)
+one_to_one_line = np.linspace(0, 0.1, 100)
 plt.scatter(mse_before_cae, mse_after_cae)
 plt.plot(one_to_one_line, one_to_one_line, 'r--')
 plt.title('MSE Before and After CAE')
@@ -111,6 +113,7 @@ plt.savefig('save/mse_before_and_after_cae.png', dpi=150)
 
 # <codecell>
 mse_before_cae.shape
+np.mean(mse_after_cae)
 
 
 
